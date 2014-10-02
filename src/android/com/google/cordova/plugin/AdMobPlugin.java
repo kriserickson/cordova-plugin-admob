@@ -2,6 +2,11 @@ package com.google.cordova.plugin;
 
 import java.util.Iterator;
 
+import android.os.Bundle;
+import com.google.ads.*;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.AdSize;
+import com.google.android.gms.ads.mediation.admob.AdMobExtras;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
@@ -12,14 +17,9 @@ import org.json.JSONObject;
 
 import android.util.Log;
 
-import com.google.ads.Ad;
-import com.google.ads.AdListener;
-import com.google.ads.AdRequest;
-import com.google.ads.AdRequest.ErrorCode;
-import com.google.ads.AdSize;
-import com.google.ads.doubleclick.DfpAdView;
-import com.google.ads.doubleclick.DfpInterstitialAd;
-import com.google.ads.mediation.admob.AdMobAdapterExtras;
+import com.google.android.gms.ads.*;
+
+
 
 /**
  * This class represents the native implementation for the AdMob Cordova plugin.
@@ -28,8 +28,8 @@ import com.google.ads.mediation.admob.AdMobAdapterExtras;
  */
 public class AdMobPlugin extends CordovaPlugin {
 	/** The adView to display to the user. */
-	private DfpAdView adView;
-	private DfpInterstitialAd intertitial;
+	private AdView adView;
+	private InterstitialAd intertitial;
 
 	/** Whether or not the ad should be positioned at top or bottom of screen. */
 	private boolean positionAtTop;
@@ -52,7 +52,7 @@ public class AdMobPlugin extends CordovaPlugin {
 	 *            The action that the plugin should execute.
 	 * @param inputs
 	 *            The input parameters for the action.
-	 * @param callbackId
+	 * @param callbackContext
 	 *            The callback ID. This is currently unused.
 	 * @return A PluginResult representing the result of the provided action. A
 	 *         status of INVALID_ACTION is returned if the action is not
@@ -132,9 +132,32 @@ public class AdMobPlugin extends CordovaPlugin {
 							.error("AdSize is null. Did you use an AdSize constant?");
 					return;
 				} else {
-					adView = new DfpAdView(cordova.getActivity(), adSize,
-							publisherId);
-					adView.setAdListener(new BannerListener());
+					adView = new AdView(cordova.getActivity());
+                    adView.setAdUnitId(publisherId);
+                    adView.setAdSize(adSize);
+
+					adView.setAdListener(new AdListener() {
+                        public void onAdLoaded() {
+                            webView.loadUrl("javascript:cordova.fireDocumentEvent('onReceiveAd');");
+                        }
+
+                        public void onAdFailedToLoad(int errorCode) {
+                            webView.loadUrl(String.format("javascript:cordova.fireDocumentEvent('onFailedToReceiveAd', { 'error': '%s' });", errorCode));
+                        }
+
+                        public void onAdOpened() {
+                            webView.loadUrl("javascript:cordova.fireDocumentEvent('onPresentScreen');");
+                        }
+
+                        public void onAdClosed() {
+			                webView.loadUrl("javascript:cordova.fireDocumentEvent('onDismissScreen');");
+		                }
+
+                        public void onAdLeftApplication() {
+			                webView.loadUrl("javascript:cordova.fireDocumentEvent('onLeaveApplication');");
+		                }
+                    });
+
 					LinearLayoutSoftKeyboardDetect parentView = (LinearLayoutSoftKeyboardDetect) webView
 							.getParent();
 					if (positionAtTop) {
@@ -184,8 +207,29 @@ public class AdMobPlugin extends CordovaPlugin {
 		Log.w(LOGTAG, "createInterstitialView");
 		Runnable runnable = new Runnable() {
 			public void run() {
-				intertitial = new DfpInterstitialAd(cordova.getActivity(), publisherId);
-				intertitial.setAdListener(new BannerListener());
+				intertitial = new InterstitialAd(cordova.getActivity());
+                intertitial.setAdUnitId(publisherId);
+				intertitial.setAdListener(new AdListener() {
+                    public void onAdLoaded() {
+                        webView.loadUrl("javascript:cordova.fireDocumentEvent('onReceiveAd');");
+                    }
+
+                    public void onAdFailedToLoad(int errorCode) {
+                        webView.loadUrl(String.format("javascript:cordova.fireDocumentEvent('onFailedToReceiveAd', { 'error': '%s' });", errorCode));
+                    }
+
+                    public void onAdOpened() {
+                        webView.loadUrl("javascript:cordova.fireDocumentEvent('onPresentScreen');");
+                    }
+
+                    public void onAdClosed() {
+                        webView.loadUrl("javascript:cordova.fireDocumentEvent('onDismissScreen');");
+                    }
+
+                    public void onAdLeftApplication() {
+                        webView.loadUrl("javascript:cordova.fireDocumentEvent('onLeaveApplication');");
+                    }
+                });
 				// Notify the plugin.
 				callbackContext.success();
 			}
@@ -249,7 +293,7 @@ public class AdMobPlugin extends CordovaPlugin {
 							.error("intertitial is null. Did you call createBannerView?");
 					return;
 				} else {
-					AdRequest request = new AdRequest();
+                    AdRequest.Builder adRequestBuilder = new AdRequest.Builder();
 					if (isTesting) {
 						// This will request test ads on the emulator only. You
 						// can
@@ -261,23 +305,33 @@ public class AdMobPlugin extends CordovaPlugin {
 						// ads
 						// on your
 						// device.
-						request.addTestDevice(AdRequest.TEST_EMULATOR);
+						adRequestBuilder.addTestDevice(AdRequest.DEVICE_ID_EMULATOR);
 					}
-					AdMobAdapterExtras extras = new AdMobAdapterExtras();
-					Iterator<String> extrasIterator = inputExtras.keys();
-					boolean inputValid = true;
-					while (extrasIterator.hasNext()) {
-						String key = extrasIterator.next();
-						try {
-							extras.addExtra(key, inputExtras.get(key));
-						} catch (JSONException exception) {
-							Log.w(LOGTAG, String.format(
-									"Caught JSON Exception: %s",
-									exception.getMessage()));
-							callbackContext.error("Error grabbing extras");
-							inputValid = false;
-						}
-					}
+
+                    boolean inputValid = true;
+
+                    if (inputExtras.keys().hasNext()) {
+                        Bundle bundle = new Bundle();
+                        Iterator<String> extrasIterator = inputExtras.keys();
+
+                        while (extrasIterator.hasNext()) {
+                            String key = extrasIterator.next();
+                            try {
+                                bundle.putString(key, inputExtras.get(key).toString());
+                            } catch (JSONException exception) {
+                                Log.w(LOGTAG, String.format(
+                                        "Caught JSON Exception: %s",
+                                        exception.getMessage()));
+                                callbackContext.error("Error grabbing extras");
+                                inputValid = false;
+                            }
+                        }
+                        AdMobExtras extras = new AdMobExtras(bundle);
+                        adRequestBuilder.addNetworkExtras(extras);
+                    }
+
+                    AdRequest request = adRequestBuilder.build();
+
 					if (inputValid) {
 						// extras.addExtra("cordova", 1);
 						// request.setNetworkExtras(extras);
@@ -303,7 +357,7 @@ public class AdMobPlugin extends CordovaPlugin {
 							.error("AdView is null.  Did you call createBannerView?");
 					return;
 				} else {
-					AdRequest request = new AdRequest();
+                    AdRequest.Builder builder = new AdRequest.Builder();
 					if (isTesting) {
 						// This will request test ads on the emulator only. You
 						// can
@@ -315,23 +369,31 @@ public class AdMobPlugin extends CordovaPlugin {
 						// ads
 						// on your
 						// device.
-						request.addTestDevice(AdRequest.TEST_EMULATOR);
+						builder.addTestDevice(AdRequest.DEVICE_ID_EMULATOR);
 					}
-					AdMobAdapterExtras extras = new AdMobAdapterExtras();
-					Iterator<String> extrasIterator = inputExtras.keys();
-					boolean inputValid = true;
-					while (extrasIterator.hasNext()) {
-						String key = extrasIterator.next();
-						try {
-							extras.addExtra(key, inputExtras.get(key));
-						} catch (JSONException exception) {
-							Log.w(LOGTAG, String.format(
-									"Caught JSON Exception: %s",
-									exception.getMessage()));
-							callbackContext.error("Error grabbing extras");
-							inputValid = false;
-						}
-					}
+
+                    boolean inputValid = true;
+
+                    if (inputExtras.keys().hasNext()) {
+                        Bundle bundle = new Bundle();
+                        Iterator<String> extrasIterator = inputExtras.keys();
+
+                        while (extrasIterator.hasNext()) {
+                            String key = extrasIterator.next();
+                            try {
+                                bundle.putString(key, inputExtras.get(key).toString());
+                            } catch (JSONException exception) {
+                                Log.w(LOGTAG, String.format(
+                                        "Caught JSON Exception: %s",
+                                        exception.getMessage()));
+                                callbackContext.error("Error grabbing extras");
+                                inputValid = false;
+                            }
+                        }
+                        AdMobExtras extras = new AdMobExtras(bundle);
+                        builder.addNetworkExtras(extras);
+                    }
+                    AdRequest request = builder.build();
 					if (inputValid) {
 						// extras.addExtra("cordova", 1);
 						// request.setNetworkExtras(extras);
@@ -345,7 +407,7 @@ public class AdMobPlugin extends CordovaPlugin {
 		this.cordova.getActivity().runOnUiThread(runnable);
 	}
 	
-	private void executeKillAd(CallbackContext callbackContext) {
+	private void executeKillAd(final CallbackContext callbackContext) {
 	        final Runnable runnable = new Runnable() {
             		public void run() {
                 		if (adView == null) {
@@ -366,53 +428,12 @@ public class AdMobPlugin extends CordovaPlugin {
         	this.cordova.getActivity().runOnUiThread(runnable);
 	}
 
-	/**
-	 * This class implements the AdMob ad listener events. It forwards the
-	 * events to the JavaScript layer. To listen for these events, use:
-	 * 
-	 * document.addEventListener('onReceiveAd', function());
-	 * document.addEventListener('onFailedToReceiveAd', function(data));
-	 * document.addEventListener('onPresentScreen', function());
-	 * document.addEventListener('onDismissScreen', function());
-	 * document.addEventListener('onLeaveApplication', function());
-	 */
-	private class BannerListener implements AdListener {
-		
-		@Override
-		public void onReceiveAd(Ad ad) {
-			if (ad == intertitial) {
-				intertitial.show();
-			}
-			webView.loadUrl("javascript:cordova.fireDocumentEvent('onReceiveAd');");
-		}
-
-		@Override
-		public void onFailedToReceiveAd(Ad ad, ErrorCode errorCode) {
-			webView.loadUrl(String
-					.format("javascript:cordova.fireDocumentEvent('onFailedToReceiveAd', { 'error': '%s' });",
-							errorCode));
-		}
-
-		@Override
-		public void onPresentScreen(Ad ad) {
-			webView.loadUrl("javascript:cordova.fireDocumentEvent('onPresentScreen');");
-		}
-
-		@Override
-		public void onDismissScreen(Ad ad) {
-			webView.loadUrl("javascript:cordova.fireDocumentEvent('onDismissScreen');");
-		}
-
-		@Override
-		public void onLeaveApplication(Ad ad) {
-			webView.loadUrl("javascript:cordova.fireDocumentEvent('onLeaveApplication');");
-		}
-	}
 
 	@Override
 	public void onDestroy() {
 		if (adView != null) {
 			adView.destroy();
+			adView = null;
 		}
 		super.onDestroy();
 	}
@@ -429,11 +450,11 @@ public class AdMobPlugin extends CordovaPlugin {
 		if ("BANNER".equals(size)) {
 			return AdSize.BANNER;
 		} else if ("IAB_MRECT".equals(size)) {
-			return AdSize.IAB_MRECT;
+			return AdSize.MEDIUM_RECTANGLE;
 		} else if ("IAB_BANNER".equals(size)) {
-			return AdSize.IAB_BANNER;
+			return AdSize.LARGE_BANNER;
 		} else if ("IAB_LEADERBOARD".equals(size)) {
-			return AdSize.IAB_LEADERBOARD;
+			return AdSize.LEADERBOARD;
 		} else if ("SMART_BANNER".equals(size)) {
 			return AdSize.SMART_BANNER;
 		} else {

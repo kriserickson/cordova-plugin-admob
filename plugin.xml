@@ -24,8 +24,9 @@
                 <param name="android-package" value="com.google.cordova.plugin.AdMobPlugin"/>
             </feature>
         </config-file>
-        <config-file target="AndroidManifest.xml" parent="/manifest/application">
-            <activity android:name="com.google.ads.AdActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|uiMode|screenSize|smallestScreenSize" />
+        <config-file target="AndroidManifest.xml" parent="/manifest/application"> 
+            <meta-data android:name="com.google.android.gms.version" android:value="5"/> 
+            <activity android:name="com.google.android.gms.ads.AdActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"/> 
         </config-file>
         <config-file target="AndroidManifest.xml" parent="/*">
             <uses-permission android:name="android.permission.INTERNET" />
@@ -33,7 +34,6 @@
             <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
         </config-file>
         
-        <source-file src="src/android/libs/GoogleAdMobAdsSdk-6.4.1.jar" target-dir="libs/"/>
         <source-file src="src/android/com/google/cordova/plugin/AdMobPlugin.java" target-dir="src/com/google/cordova/plugin"/>
     </platform>
     <!-- ios -->
